@@ -1,0 +1,50 @@
+[app]
+name = "sleep-dash"
+version = "0.1.0"
+description = "Sleep dashboard - hypnogram and heart rate on one time axis"
+
+[runtime.container]
+image = "Dockerfile"
+port = 8080
+
+[routing]
+# Polled by the router to decide the app has booted. It must stay 200 through
+# every degraded state -- an unconfigured service and an unreachable provider are
+# both normal states awaiting attention, and failing the probe for either would
+# make the router restart-loop a container that is working correctly.
+health_check = "/health"
+# No public paths. This is the owner's own sleep data: the router's session gate
+# is the first lock and owner_guard in routes/dash.py is the second.
+public_paths = []
+
+[resources]
+memory_mb = 256
+# cpu_cores, NOT cpu_millicores. health-dashboard uses the latter, but the sibling
+# connector's AGENTS.md records as a first-hand deploy finding that it is silently
+# ignored and yields the 0.1-core default. The payoff is asymmetric: if cpu_cores is
+# honoured we get 0.25, and if it somehow is not we fall back to 0.1 -- exactly what
+# cpu_millicores would have given us anyway. test_manifest.py pins this.
+cpu_cores = 0.25
+
+[data]
+# No state of its own. Every read goes through the health service and the only
+# cache is in-process and rebuildable, so there is nothing to persist.
+app_data = false
+
+[[services.v2.consumes]]
+# Deliberately the pre-rename "imbue-openhost" string: the spec's own client
+# hardcodes it as SERVICE_URL even on the cloud-in-a-bottle repo's main, and the
+# router matches a provider's service string against the consumer's. Declaring the
+# cloud-in-a-bottle URL here would mean we never route to any provider.
+service = "github.com/imbue-openhost/health-data-service-spec"
+# MUST equal sleep_dash.config.DEFAULT_SHORTNAME. The client builds
+# {router}/api/services/v2/call/{shortname}; a mismatch is a 404 that _fan_out reads
+# as "this provider has nothing", producing a permanently empty dashboard with
+# nothing in any log to explain it. test_manifest.py pins the two to each other.
+shortname = "health"
+version = ">=0.1.0"
+# UNVERIFIED. The sibling openhost_spec_mcp consumes this identical service with no
+# grants key at all and works, so this is a superset of the known-good config. If a
+# deployed instance gets no data, drop this line first. Deliberately not asserted in
+# test_manifest.py for that reason.
+grants = ["full_access"]
